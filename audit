@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Osano Compliance Review</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Jost:wght@500;700&family=Inter:wght@400;600&display=swap');
+
+  body { font-family: 'Inter', sans-serif; margin:0; padding:0; background:#f8f9fc; color:#1a1a1a; line-height:1.6; }
+  h1,h2,h3 { font-family:'Jost', sans-serif; color:#5e2ce0; margin-bottom:0.5em; }
+  h1 { font-size:2em; text-align:center; margin-top:30px; }
+  h2.section-header { background:#f1edff; padding:12px 15px; border-left:6px solid #5e2ce0; margin-top:30px; border-radius:4px; font-size:1.3em; }
+  .container { max-width:900px; margin:auto; padding:20px; }
+
+  .question { background:#fff; border-radius:8px; box-shadow:0 3px 12px rgba(0,0,0,0.08); padding:18px 22px; margin:15px 0; transition:transform 0.15s ease; }
+  .question:hover { transform:translateY(-2px); }
+  .question label { display:block; margin:6px 0; font-weight:500; }
+  .question textarea { width:100%; border:1px solid #ccc; border-radius:6px; padding:8px; font-family:'Inter',sans-serif; margin-top:6px; resize:vertical; }
+
+  .high-risk { border-left:6px solid #f04438; }
+  .medium-risk { border-left:6px solid #f79009; }
+  .low-risk { border-left:6px solid #12b76a; }
+
+  button { background:linear-gradient(90deg,#5e2ce0,#9d63ff); color:white; border:none; padding:14px 28px; border-radius:8px; font-size:16px; cursor:pointer; margin-top:20px; display:inline-block; transition:background 0.2s ease; }
+  button:hover { background:linear-gradient(90deg,#4a22c4,#8c3cff); }
+
+  #report { background:#fff; padding:25px 30px; border-radius:10px; box-shadow:0 4px 18px rgba(0,0,0,0.12); margin-top:40px; display:none; }
+  #report h3 { margin-top:20px; }
+  .risk-high { color:#f04438; font-weight:600; }
+  .risk-medium { color:#f79009; font-weight:600; }
+  .risk-low { color:#12b76a; font-weight:600; }
+  .note-block { font-style:italic; color:#555; margin-top:4px; }
+  .note-block a { color:#5e2ce0; text-decoration:underline; }
+
+  .qa-summary { margin-top:25px; background:#f3f2ff; padding:18px; border-left:5px solid #5e2ce0; border-radius:6px; }
+  .qa-summary h3 { margin-top:0; }
+
+  @media(max-width:600px){ body{padding:15px;} .question{padding:14px;} button{width:100%;} }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<div class="container">
+<h1>Osano Compliance Self-Review</h1>
+<p>Answer the questions below about your Osano implementation. Add notes if necessary. Once done, generate a report with risk-prioritized recommendations and export as PDF.</p>
+
+<form id="reviewForm"></form>
+<div id="report"></div>
+<button id="downloadBtn" style="display:none;">Download PDF</button>
+</div>
+
+<script>
+const checks = [
+  { section: 'Cookie Consent Installation', name: 'inHead', label: 'Is osano.js placed in the "head"?', text: 'Ensure osano.js is in the <head> tag to block non-essential scripts before consent.', risk: 'high', docLink: 'https://docs.osano.com/hc/en-us/articles/22472104822548-Installing-Osano-on-Wordpress' },
+  { section: 'Cookie Consent Installation', name: 'noAsyncDefer', label: 'Is osano.js loaded without async/defer?', text: 'Do not use async/defer with osano.js.', risk: 'high', docLink: 'https://docs.osano.com/hc/en-us/articles/29520667499540-Verify-and-Troubleshoot-your-Google-Consent-Mode-Installation' },
+  { section: 'Cookie Consent Installation', name: 'strictMode', label: 'Is your Osano configuration in "Strict" mode?', text: 'Strict mode blocks all non-essential cookies by default.', risk: 'high', docLink: 'https://docs.osano.com/hc/en-us/articles/22472145619988-Compliance-Modes-Listener-Permissive-Strict' },
+
+  // Cookie Consent Frameworks
+  { section: 'Cookie Consent Frameworks', name: 'usOptOut', label: 'Is US State Opt-Out turned OFF (for CPRA)?', text: 'US State Opt-Out must be OFF to allow opt-in consent.', risk: 'high', docLink: '' },
+  { section: 'Cookie Consent Frameworks', name: 'gpc', label: 'Is GPC (Global Privacy Control) enabled?', text: 'Enable GPC to detect Do Not Sell signals sent by browsers.', risk: 'high', docLink: '' },
+  { section: 'Cookie Consent Frameworks', name: 'dnt', label: 'Is DNT (Do Not Track) enabled?', text: 'While not legally required, enabling DNT honors legacy preferences.', risk: 'low', docLink: '' },
+  { section: 'Cookie Consent Frameworks', name: 'managePreferences', label: 'Is the Manage Preferences button enabled?', text: 'Enable this button to improve transparency.', risk: 'low', docLink: '' },
+  { section: 'Cookie Consent Frameworks', name: 'dnsLink', label: 'Is there a "Do Not Sell" link in the footer?', text: 'Add a footer link labeled "Do Not Sell" to comply with CPRA/CCPA.', risk: 'low', docLink: 'https://docs.osano.com/hc/en-us/articles/22471437259028-How-to-set-up-the-do-not-sell-modal' },
+  { section: 'Cookie Consent Frameworks', name: 'cookieLink', label: 'Is there a cookie preferences link or widget?', text: 'Ensure a persistent cookie preferences link exists.', risk: 'high', docLink: 'https://docs.osano.com/hc/en-us/articles/22469396579220-Hiding-the-Cookie-Widget-Cookie-Icon' },
+
+  // DSAR & Other
+  { section: 'DSAR & Other', name: 'dsarForm', label: 'Is a DSAR form present and accessible?', text: 'Provide a discoverable DSAR form.', risk: 'high', docLink: 'https://docs.osano.com/hc/en-us/articles/22472143448340-DSAR-Getting-Started' },
+  { section: 'DSAR & Other', name: 'dsarLink', label: 'Is the DSAR form linked in the privacy policy?', text: 'Include a hyperlink or embed in your privacy policy.', risk: 'medium', docLink: 'https://docs.osano.com/hc/en-us/articles/34300102859284-DSAR-Link-in-CMP-Drawer-Setup-Guide' },
+  { section: 'DSAR & Other', name: 'dsarRights', label: 'Does the DSAR form offer full rights?', text: 'Support all required rights (access, deletion, correction, etc.).', risk: 'high', docLink: 'https://docs.osano.com/hc/en-us/articles/22471428469524-Subject-rights-DSAR-overview' }
+];
+
+const form=document.getElementById('reviewForm');
+
+// DSAR Usage dropdown
+const dsarSelectDiv=document.createElement('div');
+dsarSelectDiv.className='question';
+dsarSelectDiv.innerHTML=`
+  <label for="dsarUsage"><strong>Is Customer Using DSAR?</strong></label>
+  <select id="dsarUsage">
+    <option value="">Select</option>
+    <option value="yes">Yes</option>
+    <option value="no">No</option>
+  </select>
+`;
+form.appendChild(dsarSelectDiv);
+
+let currentSection='';
+checks.forEach(({section,name,label,risk})=>{
+  const div=document.createElement('div');
+  div.className=`question ${risk==='high'?'high-risk':risk==='medium'?'medium-risk':'low-risk'}`;
+  div.dataset.section=section;
+  div.dataset.name=name;
+  div.innerHTML=`
+    <strong>${label}</strong>
+    <label><input type="radio" name="${name}" value="yes"> Yes</label>
+    <label><input type="radio" name="${name}" value="no"> No</label>
+    <label for="note-${name}"><em>Optional Notes:</em></label>
+    <textarea name="note-${name}" rows="2" placeholder="Add specifics…"></textarea>
+  `;
+  // DSAR section hidden initially
+  if(section==='DSAR & Other') div.style.display='none';
+  // Insert section header if changed
+  if(section!==currentSection){
+    const header=document.createElement('h2');
+    header.className='section-header';
+    header.textContent=section;
+    form.appendChild(header);
+    currentSection=section;
+  }
+  form.appendChild(div);
+});
+
+// Show/hide DSAR section based on dropdown
+document.getElementById('dsarUsage').addEventListener('change',(e)=>{
+  const value=e.target.value;
+  document.querySelectorAll('[data-section="DSAR & Other"]').forEach(el=>{
+    el.style.display=value==='yes'?'block':'none';
+  });
+});
+
+// Generate Report Button
+const button=document.createElement('button');
+button.type='button';
+button.textContent='Generate Report';
+button.onclick=generateReport;
+form.appendChild(button);
+
+function generateReport(){
+  const report=document.getElementById('report');
+  const downloadBtn=document.getElementById('downloadBtn');
+  const unanswered=checks.filter(({name,section})=>{
+    if(section==='DSAR & Other' && document.getElementById('dsarUsage').value!=='yes') return false;
+    return !Array.from(document.getElementsByName(name)).some(r=>r.checked);
+  });
+  if(unanswered.length>0){ alert('Please answer all visible questions.'); return; }
+
+  const riskBuckets={high:[],medium:[],low:[],pass:[]};
+  let qa='<div class="qa-summary"><h3>Full Question & Answer Summary</h3><ul>';
+  checks.forEach(({name,label,text,risk,section,docLink})=>{
+    if(section==='DSAR & Other' && document.getElementById('dsarUsage').value!=='yes') return;
+    const value=form[name]?.value;
+    const notes=form[`note-${name}`]?.value.trim();
+    const answer=value==='yes'?'✅ Yes':'❌ No';
+    qa+=`<li><strong>${label}</strong><br/>Answer: <em>${answer}</em>${notes?`<div class="note-block"><strong>Notes:</strong> ${notes}</div>`:''}</li>`;
+    if(value==='no') riskBuckets[risk].push({label,text,notes,docLink,risk});
+    else riskBuckets.pass.push({label});
+  });
+  let html='<h2>Implementation Review Report</h2>';
+  const renderRiskSection=(title,icon,color,items)=>{
+    if(!items.length) return '';
+    let out=`<h3>${icon} ${title}</h3><ul>`;
+    items.forEach(item=>{
+      out+=`<li><span class="risk-${color}">${item.label}</span><br/>${item.text}${item.docLink?`<div class="note-block"><a href="${item.docLink}" target="_blank">View documentation ↗</a></div>`:''}${item.notes?`<div class="note-block"><em>Note:</em> ${item.notes}</div>`:''}</li><br/>`;
+    });
+    out+='</ul>'; return out;
+  };
+  html+=renderRiskSection('HIGH-RISK Findings','🟥','high',riskBuckets.high);
+  html+=renderRiskSection('MEDIUM-RISK Findings','🟧','medium',riskBuckets.medium);
+  html+=renderRiskSection('LOW-RISK Findings','🟩','low',riskBuckets.low);
+  if(riskBuckets.pass.length){ html+='<h3>✅ No Issues Found</h3><ul>';
+    riskBuckets.pass.forEach(({label})=>{html+=`<li>${label} — No action needed</li>`;});
+    html+='</ul>';
+  }
+  html+=qa+'</div>';
+  report.innerHTML=html;
+  report.style.display='block';
+  downloadBtn.style.display='inline-block';
+}
+
+document.getElementById('downloadBtn').addEventListener('click',async()=>{
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF('p','pt','a4');
+  const margin=40;
+  const pageWidth=pdf.internal.pageSize.getWidth();
+  const pageHeight=pdf.internal.pageSize.getHeight();
+  const elements=Array.from(document.querySelectorAll('#report > *'));
+  const today=new Date().toLocaleDateString();
+  let yOffset=margin;
+  for(let i=0;i<elements.length;i++){
+    const el=elements[i];
+    const canvas=await html2canvas(el,{scale:2,useCORS:true});
+    const imgData=canvas.toDataURL('image/png');
+    const imgWidth=pageWidth-margin*2;
+    const imgHeight=(canvas.height*imgWidth)/canvas.width;
+    if(yOffset+imgHeight>pageHeight-margin-40){pdf.addPage();yOffset=margin;}
+    pdf.addImage(imgData,'PNG',margin,yOffset,imgWidth,imgHeight);
+    yOffset+=imgHeight+10;
+  }
+  const pageCount=pdf.internal.getNumberOfPages();
+  for(let i=1;i<=pageCount;i++){
+    pdf.setPage(i);
+    pdf.setFontSize(10);pdf.setTextColor('#666');
+    pdf.text(`Report run on ${today}`,margin,pageHeight-20);
+    pdf.text('Powered by Osano',pageWidth-margin-100,pageHeight-20);
+  }
+  pdf.save('osano-implementation-review.pdf');
+});
+</script>
+</body>
+</html>
